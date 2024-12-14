@@ -11,17 +11,20 @@ from skopt.space import Real, Integer, Categorical
 from sklearn.metrics import classification_report, accuracy_score
 import json
 from sklearn.preprocessing import LabelEncoder
-from _config import config   
+#from _config import config   
 
 class TrainModel(BaseEstimator, TransformerMixin):
-    def __init__(self, config):
-        self.config = config
-        self.target = config.get("target_label", None)  # User-defined target label in config
+    def __init__(self, classifier, train_label, target):
+        #self.config = config
+        #self.target = config.get("target_label", None)  # User-defined target label in config
+        self.classifier = classifier
+        self.train_label = train_label
+        self.target = target
         self.label_encoder = LabelEncoder()
-        self.selected_domains = self.config.get("selected_domains", "All domains")  # Default to all domains if None
+        #self.selected_domains = self.config.get("selected_domains", "All domains")  # Default to all domains if None
 
-        if not self.target:
-            raise ValueError("No target label specified in the config. Please set 'target_label'.")
+        #if not self.target:
+        #    raise ValueError("No target label specified in the config. Please set 'target_label'.")
 
     def get_default_param_space(self, classifier):
         """ Returns the default hyperparameter space for a given classifier. """
@@ -71,21 +74,27 @@ class TrainModel(BaseEstimator, TransformerMixin):
         # Value counts for the encoded target        
         value_counts = X['encoded_target'].value_counts().to_dict()
         print(f"Value counts for encoded target: {value_counts}")
-        
+        print(X.columns)
         # Pop unnecessary columns (groupid, emotion labels not being used, etc.)
         groups = X.pop('groupid')
+        print(f"Group IDs popped from the dataset.")
         # Pop the label columns which aren't used
-        for label in self.config["label_columns"]:
-                X.pop(label)
 
+        self.train_label = self.train_label.split(",")
+        for label in self.train_label:
+            X.pop(label)
+
+        print(f"Label columns popped from the dataset.")
         # Pop the encoded target as Y
         y = X.pop('encoded_target')
+        print(f"Encoded target column popped from the dataset.")
+        print(X.columns)
 
         # Store the feature names for later use
         feature_names = X.columns.tolist()
-
+        print(f"hallo")
         # Choose classifier
-        classifier = self.config['classifier']
+        classifier = self.classifier
         if classifier == 'xgboost':
             model = XGBClassifier(objective='multi:softmax', random_state=42)
         elif classifier == 'svm':
@@ -100,10 +109,10 @@ class TrainModel(BaseEstimator, TransformerMixin):
         # Use user-defined param_space if provided, otherwise use default
         print(f"Classifier: {classifier}")
         default_param_space = self.get_default_param_space(classifier)
-        param_space = self.config.get("param_space") or default_param_space     
+        param_space = default_param_space     
 
         # Hyperparameter tuning using Bayesian optimization
-        sgkf = StratifiedGroupKFold(n_splits=self.config['n_splits'])
+        sgkf = StratifiedGroupKFold(n_splits=5)
         print(f"Parameter space being used: {param_space}")
         if param_space is None:
             raise ValueError("Parameter space cannot be None. Please check the classifier configuration.")
@@ -112,9 +121,9 @@ class TrainModel(BaseEstimator, TransformerMixin):
             estimator=model,
             search_spaces=param_space,
             cv=sgkf,
-            n_iter=self.config['n_iter'],
-            n_jobs=self.config['n_jobs'],
-            n_points=self.config['n_points'],
+            n_iter=5,
+            n_jobs=-1,
+            n_points=1,
             verbose=1,
             scoring='accuracy'
         )
@@ -154,8 +163,8 @@ class TrainModel(BaseEstimator, TransformerMixin):
             "label_mapping": label_mapping,
             "model_name": model_name,
             "value_counts": value_counts,
-            "selected_domains": self.selected_domains,  
-            "include_magnitude": self.config.get("include_magnitude", True)      
+            #"selected_domains": self.selected_domains,  
+            #"include_magnitude": self.config.get("include_magnitude", True)      
         }
 
         if hasattr(self.best_model, "feature_importances_"):

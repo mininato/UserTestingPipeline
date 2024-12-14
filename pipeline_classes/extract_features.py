@@ -32,7 +32,7 @@ class ExtractFeatures(BaseEstimator, TransformerMixin):
                     features['groupid'] = groupid  # Add groupid to the features
                     
                     # Dynamically add emotion labels to the features
-                    for label in self.label_columns:
+                    for label in self.features_label_columns:
                         features[label] = temp[label].iloc[0]
                     
                     features_list.append(pd.DataFrame([features]))  # Convert dictionary to DataFrame

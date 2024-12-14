@@ -27,17 +27,17 @@ feature_extraction_pipeline = Pipeline([
 
 training_model_pipeline = Pipeline([
     #('import_data', ImportData(use_accel=False, use_reports=False, use_combined=False, use_features=True)),
-    ('pca_handler', PCAHandler(apply_pca=config["apply_pca"], variance=config["pca_variance"])),
-    ('train_model', TrainModel(config=config)),
+    ('pca_handler', PCAHandler(apply_pca=None, variance=None)),
+    ('train_model', TrainModel(classifier=None, train_label= None, target=None)),
 ])
 
 analyzing_data_pipeline = Pipeline([
     #('import_data', ImportData(use_accel=True, use_reports=False, use_combined=False, use_features=False)),
-    ('low_pass_filter', LowPassFilter(cutoff_frequency=config["cutoff_frequency"], sampling_rate=config["data_frequency"], order=config["order"])),
-    ('scale_xyz_data', ScaleXYZData(scaler_type=config["scaler_type"])),
-    ('extract_features', ExtractFeatures(window_length=config['window_length'], window_step_size=config["window_step_size"], data_frequency=config["data_frequency"],
-                                          selected_domains=config['selected_domains'], include_magnitude=config['include_magnitude'])),
-    ('classify_movement_data', ClassifyMovementData()),
+    # ('low_pass_filter', LowPassFilter(cutoff_frequency=config["cutoff_frequency"], sampling_rate=config["data_frequency"], order=config["order"])),
+    # ('scale_xyz_data', ScaleXYZData(scaler_type=config["scaler_type"])),
+    # ('extract_features', ExtractFeatures(window_length=config['window_length'], window_step_size=config["window_step_size"], data_frequency=config["data_frequency"],
+    #                                       selected_domains=config['selected_domains'], include_magnitude=config['include_magnitude'])),
+    # ('classify_movement_data', ClassifyMovementData()),
 ])
 
 complete_training_model_pipeline = Pipeline([
@@ -193,6 +193,29 @@ def execute_feature_extraction_pipeline(combined_file, cutoff_frequency, order, 
     except Exception as e:
         print(f"Error occurred: {str(e)}")
         return str(e)
+    
+def execute_training_pipeline(features_file, apply_pca, pca_variance, classifier, train_label, target):
+    try:
+        print(f"features_file: {features_file}")
+        features_data = pd.read_csv(features_file) if features_file else None
+        if features_data is None:
+            return "Error: Features data file is required for this pipeline.", None
+        
+        training_model_pipeline.set_params(
+            pca_handler__apply_pca=apply_pca,
+            pca_handler__variance=pca_variance,
+            train_model__classifier=classifier,
+            train_model__train_label=train_label,
+            train_model__target=target)
+        
+        X = features_data
+        training_model_pipeline.fit(X)
+        output_file, secondary_output_file = training_model_pipeline.named_steps['train_model'].get_output_files()
+        return output_file, secondary_output_file
+
+    except Exception as e:
+        print(f"Error occurred: {str(e)}")
+        return str(e), None
 
 # Gradio Blocks Interface
 with gr.Blocks() as demo:
@@ -252,15 +275,22 @@ with gr.Blocks() as demo:
 
         with gr.TabItem("Train Model"):
             features_file = gr.File(label="Upload Features Data")
+
+            apply_pca = gr.Checkbox(label="Apply PCA", value=False)
+            pca_variance = gr.Number(label="PCA Variance", value=0.95)
+            classifier = gr.Dropdown(label="Classifier", choices=["xgboost", "svm", "randomforest"], value="xgboost")
+            train_label = gr.Textbox(label="Label Columns (comma-separated)", value="valence,arousal")
+            target = gr.Textbox(label="Target Label", value="arousal")
+
             train_button = gr.Button("Train Model")
             train_output_json = gr.File(label="Download Model JSON")
             train_output_pkl = gr.File(label="Download Model PKL")
 
-            def train_model(features_file):
-                output_file, secondary_output_file = execute_pipeline("Train Model", None, None, None, features_file.name, None)
+            def train_model(features_file, apply_pca, pca_variance, classifier, train_label,  target):
+                output_file, secondary_output_file = execute_training_pipeline(features_file, apply_pca, pca_variance, classifier, train_label, target)
                 return output_file, secondary_output_file
 
-            train_button.click(train_model, inputs=features_file, outputs=[train_output_json, train_output_pkl])
+            train_button.click(train_model, inputs=[features_file, apply_pca, pca_variance, classifier, train_label, target], outputs=[train_output_json, train_output_pkl])
 
         with gr.TabItem("Analyze Data"):
             accel_file = gr.File(label="Upload Accelerometer Data")
